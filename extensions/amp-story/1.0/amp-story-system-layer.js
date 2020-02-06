@@ -27,7 +27,7 @@ import {
 import {LocalizedStringId} from '../../../src/localized-strings';
 import {ProgressBar} from './progress-bar';
 import {Services} from '../../../src/services';
-import {createShadowRootWithStyle} from './utils';
+import {createShadowRootWithStyle, shouldShowStoryUrlInfo} from './utils';
 import {dev} from '../../../src/log';
 import {dict} from '../../../src/utils/object';
 import {getMode} from '../../../src/mode';
@@ -67,8 +67,11 @@ const INFO_CLASS = 'i-amphtml-story-info-control';
 /** @private @const {string} */
 const SIDEBAR_CLASS = 'i-amphtml-story-sidebar-control';
 
+/** @private @const {string} */
+const HAS_NEW_PAGE_ATTRIBUTE = 'i-amphtml-story-has-new-page';
+
 /** @private @const {number} */
-const HIDE_AUDIO_MESSAGE_TIMEOUT_MS = 1500;
+const HIDE_MESSAGE_TIMEOUT_MS = 1500;
 
 /** @private @const {!./simple-template.ElementDef} */
 const TEMPLATE = {
@@ -79,6 +82,35 @@ const TEMPLATE = {
   children: [
     {
       tag: 'div',
+      attrs: dict({
+        'class': 'i-amphtml-story-has-new-page-notification-container',
+      }),
+      children: [
+        {
+          tag: 'div',
+          attrs: dict({
+            'class': 'i-amphtml-story-has-new-page-text-wrapper',
+          }),
+          children: [
+            {
+              tag: 'span',
+              attrs: dict({
+                'class': 'i-amphtml-story-has-new-page-circle-icon',
+              }),
+            },
+            {
+              tag: 'div',
+              attrs: dict({
+                'class': 'i-amphtml-story-has-new-page-text',
+              }),
+              localizedStringId: LocalizedStringId.AMP_STORY_HAS_NEW_PAGE_TEXT,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      tag: 'div',
       attrs: dict({'class': 'i-amphtml-story-system-layer-buttons'}),
       children: [
         {
@@ -87,6 +119,7 @@ const TEMPLATE = {
             'role': 'button',
             'class': INFO_CLASS + ' i-amphtml-story-button',
           }),
+          localizedLabelId: LocalizedStringId.AMP_STORY_INFO_BUTTON_LABEL,
         },
         {
           tag: 'div',
@@ -97,6 +130,7 @@ const TEMPLATE = {
             {
               tag: 'div',
               attrs: dict({
+                'role': 'alert',
                 'class': 'i-amphtml-message-container',
               }),
               children: [
@@ -132,6 +166,8 @@ const TEMPLATE = {
                 'role': 'button',
                 'class': UNMUTE_CLASS + ' i-amphtml-story-button',
               }),
+              localizedLabelId:
+                LocalizedStringId.AMP_STORY_AUDIO_UNMUTE_BUTTON_LABEL,
             },
             {
               tag: 'div',
@@ -139,15 +175,18 @@ const TEMPLATE = {
                 'role': 'button',
                 'class': MUTE_CLASS + ' i-amphtml-story-button',
               }),
+              localizedLabelId:
+                LocalizedStringId.AMP_STORY_AUDIO_MUTE_BUTTON_LABEL,
             },
           ],
         },
         {
-          tag: 'div',
+          tag: 'a',
           attrs: dict({
             'role': 'button',
             'class': SHARE_CLASS + ' i-amphtml-story-button',
           }),
+          localizedLabelId: LocalizedStringId.AMP_STORY_SHARE_BUTTON_LABEL,
         },
         {
           tag: 'div',
@@ -155,6 +194,7 @@ const TEMPLATE = {
             'role': 'button',
             'class': SIDEBAR_CLASS + ' i-amphtml-story-button',
           }),
+          localizedLabelId: LocalizedStringId.AMP_STORY_SIDEBAR_BUTTON_LABEL,
         },
       ],
     },
@@ -166,7 +206,11 @@ const TEMPLATE = {
  * Chrome contains:
  *   - mute/unmute button
  *   - story progress bar
- *   - bookend close butotn
+ *   - bookend close button
+ *   - share button
+ *   - domain info button
+ *   - sidebar
+ *   - story updated label (for live stories)
  */
 export class SystemLayer {
   /**
@@ -177,7 +221,7 @@ export class SystemLayer {
     /** @private @const {!Window} */
     this.win_ = win;
 
-    /** @private @const {!Element} */
+    /** @protected @const {!Element} */
     this.parentEl_ = parentEl;
 
     /** @private {boolean} */
@@ -199,7 +243,7 @@ export class SystemLayer {
     this.buttonsContainer_ = null;
 
     /** @private @const {!ProgressBar} */
-    this.progressBar_ = ProgressBar.create(win);
+    this.progressBar_ = ProgressBar.create(win, this.parentEl_);
 
     /** @private {!DevelopmentModeLog} */
     this.developerLog_ = DevelopmentModeLog.create(win);
@@ -221,10 +265,10 @@ export class SystemLayer {
   }
 
   /**
-   * @param {!Array<string>} pageIds the ids of each page in the story
    * @return {!Element}
+   * @param {string} initialPageId
    */
-  build(pageIds) {
+  build(initialPageId) {
     if (this.isBuilt_) {
       return this.getRoot();
     }
@@ -233,11 +277,17 @@ export class SystemLayer {
 
     this.root_ = this.win_.document.createElement('div');
     this.systemLayerEl_ = renderAsElement(this.win_.document, TEMPLATE);
+    // Make the share button link to the current document to make sure
+    // embedded STAMPs always have a back-link to themselves, and to make
+    // gestures like right-clicks work.
+    this.systemLayerEl_.querySelector(
+      '.i-amphtml-story-share-control'
+    ).href = Services.documentInfoForDoc(this.parentEl_).canonicalUrl;
 
     createShadowRootWithStyle(this.root_, this.systemLayerEl_, CSS);
 
     this.systemLayerEl_.insertBefore(
-      this.progressBar_.build(pageIds),
+      this.progressBar_.build(initialPageId),
       this.systemLayerEl_.firstChild
     );
 
@@ -264,9 +314,9 @@ export class SystemLayer {
       this.systemLayerEl_.setAttribute('ios', '');
     }
 
-    if (
-      Services.viewerForDoc(this.win_.document.documentElement).isEmbedded()
-    ) {
+    const viewer = Services.viewerForDoc(this.win_.document.documentElement);
+
+    if (shouldShowStoryUrlInfo(viewer)) {
       this.systemLayerEl_.classList.add('i-amphtml-embedded');
       this.getShadowRoot().setAttribute(HAS_INFO_BUTTON_ATTRIBUTE, '');
     } else {
@@ -274,6 +324,7 @@ export class SystemLayer {
     }
 
     this.getShadowRoot().setAttribute(MESSAGE_DISPLAY_CLASS, 'noshow');
+    this.getShadowRoot().setAttribute(HAS_NEW_PAGE_ATTRIBUTE, 'noshow');
     return this.getRoot();
   }
 
@@ -306,7 +357,7 @@ export class SystemLayer {
       } else if (matches(target, `.${UNMUTE_CLASS}, .${UNMUTE_CLASS} *`)) {
         this.onAudioIconClick_(false);
       } else if (matches(target, `.${SHARE_CLASS}, .${SHARE_CLASS} *`)) {
-        this.onShareClick_();
+        this.onShareClick_(event);
       } else if (matches(target, `.${INFO_CLASS}, .${INFO_CLASS} *`)) {
         this.onInfoClick_();
       } else if (matches(target, `.${SIDEBAR_CLASS}, .${SIDEBAR_CLASS} *`)) {
@@ -392,6 +443,10 @@ export class SystemLayer {
         this.onSystemUiIsVisibleStateUpdate_(isVisible);
       }
     );
+
+    this.storeService_.subscribe(StateProperty.NEW_PAGE_AVAILABLE_ID, () => {
+      this.onNewPageAvailable_();
+    });
   }
 
   /**
@@ -498,6 +553,7 @@ export class SystemLayer {
           );
     });
   }
+
   /**
    * Reacts to muted state updates.
    * @param {boolean} isMuted
@@ -512,29 +568,31 @@ export class SystemLayer {
   }
 
   /**
-   * Hides audio message after elapsed time.
+   * Hides message after elapsed time.
+   * @param {string} message
    * @private
    */
-  hideAudioMessageAfterTimeout_() {
+  hideMessageAfterTimeout_(message) {
     if (this.timeoutId_) {
       this.timer_.cancel(this.timeoutId_);
     }
     this.timeoutId_ = this.timer_.delay(
-      () => this.hideAudioMessageInternal_(),
-      HIDE_AUDIO_MESSAGE_TIMEOUT_MS
+      () => this.hideMessageInternal_(message),
+      HIDE_MESSAGE_TIMEOUT_MS
     );
   }
 
   /**
-   * Hides audio message.
+   * Hides message.
+   * @param {string} message
    * @private
    */
-  hideAudioMessageInternal_() {
+  hideMessageInternal_(message) {
     if (!this.isBuilt_) {
       return;
     }
     this.vsync_.mutate(() => {
-      this.getShadowRoot().setAttribute(MESSAGE_DISPLAY_CLASS, 'noshow');
+      this.getShadowRoot().setAttribute(message, 'noshow');
     });
   }
 
@@ -581,7 +639,16 @@ export class SystemLayer {
    */
   onPageIndexUpdate_(index) {
     this.vsync_.mutate(() => {
-      this.getShadowRoot().classList.toggle('first-page-active', index === 0);
+      const lastIndex =
+        this.storeService_.get(StateProperty.PAGE_IDS).length - 1;
+      this.getShadowRoot().classList.toggle(
+        'i-amphtml-first-page-active',
+        index === 0
+      );
+      this.getShadowRoot().classList.toggle(
+        'i-amphtml-last-page-active',
+        index === lastIndex
+      );
     });
   }
 
@@ -607,15 +674,17 @@ export class SystemLayer {
     this.storeService_.dispatch(Action.TOGGLE_MUTED, mute);
     this.vsync_.mutate(() => {
       this.getShadowRoot().setAttribute(MESSAGE_DISPLAY_CLASS, 'show');
-      this.hideAudioMessageAfterTimeout_();
+      this.hideMessageAfterTimeout_(MESSAGE_DISPLAY_CLASS);
     });
   }
 
   /**
    * Handles click events on the share button and toggles the share menu.
+   * @param {!Event} event
    * @private
    */
-  onShareClick_() {
+  onShareClick_(event) {
+    event.preventDefault();
     const isOpen = this.storeService_.get(StateProperty.SHARE_MENU_STATE);
     this.storeService_.dispatch(Action.TOGGLE_SHARE_MENU, !isOpen);
   }
@@ -635,6 +704,17 @@ export class SystemLayer {
    */
   onSidebarClick_() {
     this.storeService_.dispatch(Action.TOGGLE_SIDEBAR, true);
+  }
+
+  /**
+   * Shows the "story updated" label when a new page was added to the story.
+   * @private
+   */
+  onNewPageAvailable_() {
+    this.vsync_.mutate(() => {
+      this.getShadowRoot().setAttribute(HAS_NEW_PAGE_ATTRIBUTE, 'show');
+      this.hideMessageAfterTimeout_(HAS_NEW_PAGE_ATTRIBUTE);
+    });
   }
 
   /**

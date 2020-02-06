@@ -20,7 +20,6 @@ import {
   setupAMPCors,
   setupInit,
   setupInput,
-  verifyAmpCORSHeaders,
 } from './utils/xhr-utils';
 import {dict} from './utils/object';
 import {user} from './log';
@@ -40,7 +39,7 @@ export function fetchDocument(win, input, opt_init) {
   input = setupInput(win, input, init);
   const ampdocService = Services.ampdocServiceFor(win);
   const ampdocSingle = ampdocService.isSingleDoc()
-    ? ampdocService.getAmpDoc()
+    ? ampdocService.getSingleDoc()
     : null;
   init.responseType = 'document';
   return getViewerInterceptResponse(win, ampdocSingle, input, init).then(
@@ -50,8 +49,8 @@ export function fetchDocument(win, input, opt_init) {
           .text()
           .then(body => new DOMParser().parseFromString(body, 'text/html'));
       }
-      return xhrRequest(input, init).then(({xhr, response}) => {
-        verifyAmpCORSHeaders(win, response, init);
+      return xhrRequest(input, init).then(resp => {
+        const {xhr} = resp;
         return xhr.responseXML;
       });
     }
@@ -63,6 +62,7 @@ export function fetchDocument(win, input, opt_init) {
  *
  * @param {string} input
  * @param {!FetchInitDef} init
+ * @return {!Promise<!{response: !Response, xhr: !XMLHttpRequest}>}
  * @private
  */
 function xhrRequest(input, init) {

@@ -15,6 +15,7 @@
  */
 import {Keys} from '../../../src/utils/key-codes';
 import {Services} from '../../../src/services';
+import {toggleAttribute} from '../../../src/dom';
 
 /**
  * @abstract
@@ -68,13 +69,14 @@ export class BaseCarousel extends AMP.BaseElement {
    * Builds a carousel button for next/prev.
    * @param {string} className
    * @param {function()} onInteraction
+   * @return {?Element}
    */
   buildButton(className, onInteraction) {
     const button = this.element.ownerDocument.createElement('div');
     button.tabIndex = 0;
     button.classList.add('amp-carousel-button');
     button.classList.add(className);
-    button.setAttribute('role', 'button');
+    button.setAttribute('role', this.buttonsAriaRole());
     button.onkeydown = event => {
       if (event.key == Keys.ENTER || event.key == Keys.SPACE) {
         if (!event.defaultPrevented) {
@@ -89,6 +91,17 @@ export class BaseCarousel extends AMP.BaseElement {
   }
 
   /**
+   * The ARIA role for the controls. Either `button` or `presentation` based
+   * on usage.
+   * @return {string}
+   * @protected
+   */
+  buttonsAriaRole() {
+    // Subclasses may override.
+    return 'button';
+  }
+
+  /**
    * Builds the next and previous buttons.
    */
   buildButtons() {
@@ -100,6 +113,7 @@ export class BaseCarousel extends AMP.BaseElement {
     this.nextButton_ = this.buildButton('amp-carousel-button-next', () => {
       this.interactionNext();
     });
+    this.updateButtonTitles();
     this.element.appendChild(this.nextButton_);
   }
 
@@ -168,18 +182,12 @@ export class BaseCarousel extends AMP.BaseElement {
     }
     this.getVsync().mutate(() => {
       const className = 'i-amphtml-carousel-button-start-hint';
+      const hideAttribute = 'i-amphtml-carousel-hide-buttons';
       this.element.classList.add(className);
       Services.timerFor(this.win).delay(() => {
         this.mutateElement(() => {
           this.element.classList.remove(className);
-          this.prevButton_.classList.toggle(
-            'i-amphtml-screen-reader',
-            !this.showControls_
-          );
-          this.nextButton_.classList.toggle(
-            'i-amphtml-screen-reader',
-            !this.showControls_
-          );
+          toggleAttribute(this.element, hideAttribute, !this.showControls_);
         });
       }, 4000);
     });

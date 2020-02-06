@@ -40,28 +40,39 @@ describes.realWin(
   },
   env => {
     let win;
-    let storyElem;
+    let storyEl;
     let ampStory;
 
     beforeEach(() => {
       win = env.win;
 
-      sandbox
-        .stub(Services, 'storyStoreService')
-        .callsFake(() => new AmpStoryStoreService(win));
+      env.sandbox.stub(win.history, 'replaceState');
 
-      storyElem = win.document.createElement('amp-story');
-      win.document.body.appendChild(storyElem);
+      const viewer = Services.viewerForDoc(env.ampdoc);
+      env.sandbox.stub(Services, 'viewerForDoc').returns(viewer);
+
+      registerServiceBuilder(win, 'performance', () => ({
+        isPerformanceTrackingOn: () => false,
+      }));
+
+      const storeService = new AmpStoryStoreService(win);
+      registerServiceBuilder(win, 'story-store', () => storeService);
+
+      storyEl = win.document.createElement('amp-story');
+      win.document.body.appendChild(storyEl);
 
       const localizationService = new LocalizationService(win);
       registerServiceBuilder(win, 'localization', () => localizationService);
 
       AmpStory.isBrowserSupported = () => true;
-      ampStory = new AmpStory(storyElem);
+
+      return storyEl.getImpl().then(impl => {
+        ampStory = impl;
+      });
     });
 
     afterEach(() => {
-      storyElem.remove();
+      storyEl.remove();
     });
 
     /**
@@ -94,6 +105,7 @@ describes.realWin(
     ) {
       const img = win.document.createElement('amp-img');
       img.setAttribute('animate-in', animationName);
+      img.setAttribute('layout', 'fill');
 
       const gridLayer = win.document.createElement('amp-story-grid-layer');
       opt_gridLayerTempalate = opt_gridLayerTempalate.length
@@ -110,6 +122,7 @@ describes.realWin(
         ' attached as a child of a grid layer with fill template.',
       () => {
         createPages(ampStory.element, 2, ['cover', 'page-1']);
+        ampStory.buildCallback();
         return ampStory
           .layoutCallback()
           .then(() => {
@@ -141,6 +154,7 @@ describes.realWin(
         'template other than `fill`.',
       () => {
         createPages(ampStory.element, 2, ['cover', 'page-1']);
+        ampStory.buildCallback();
         return ampStory
           .layoutCallback()
           .then(() => {
@@ -171,6 +185,7 @@ describes.realWin(
         'animation is used.',
       () => {
         createPages(ampStory.element, 2, ['cover', 'page-1']);
+        ampStory.buildCallback();
         return ampStory
           .layoutCallback()
           .then(() => {

@@ -23,14 +23,14 @@
 
 const colors = require('ansi-colors');
 const {
-  downloadBuildOutput,
+  downloadDistOutput,
   printChangeSummary,
   startTimer,
   stopTimer,
   timedExecOrDie: timedExecOrDieBase,
 } = require('./utils');
 const {determineBuildTargets} = require('./build-targets');
-const {isTravisPullRequestBuild} = require('../travis');
+const {isTravisPullRequestBuild} = require('../common/travis');
 
 const FILENAME = 'e2e-tests.js';
 const FILELOGPREFIX = colors.bold(colors.yellow(`${FILENAME}:`));
@@ -41,20 +41,18 @@ async function main() {
   const startTime = startTimer(FILENAME, FILENAME);
 
   if (!isTravisPullRequestBuild()) {
-    downloadBuildOutput(FILENAME);
+    downloadDistOutput(FILENAME);
     timedExecOrDie('gulp update-packages');
     timedExecOrDie('gulp e2e --nobuild --headless');
   } else {
     printChangeSummary(FILENAME);
-    const buildTargets = new Set();
-    determineBuildTargets(buildTargets, FILENAME);
-
+    const buildTargets = determineBuildTargets(FILENAME);
     if (
       buildTargets.has('RUNTIME') ||
       buildTargets.has('FLAG_CONFIG') ||
       buildTargets.has('E2E_TEST')
     ) {
-      downloadBuildOutput(FILENAME);
+      downloadDistOutput(FILENAME);
       timedExecOrDie('gulp update-packages');
       timedExecOrDie('gulp e2e --nobuild --headless');
     } else {

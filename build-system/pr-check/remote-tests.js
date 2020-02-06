@@ -32,12 +32,11 @@ const {
   timedExecOrDie: timedExecOrDieBase,
 } = require('./utils');
 const {determineBuildTargets} = require('./build-targets');
-const {isTravisPullRequestBuild} = require('../travis');
+const {isTravisPullRequestBuild} = require('../common/travis');
 
 const FILENAME = 'remote-tests.js';
 const FILELOGPREFIX = colors.bold(colors.yellow(`${FILENAME}:`));
-const timedExecOrDie = (cmd, unusedFileName) =>
-  timedExecOrDieBase(cmd, FILENAME);
+const timedExecOrDie = cmd => timedExecOrDieBase(cmd, FILENAME);
 
 async function main() {
   const startTime = startTimer(FILENAME, FILENAME);
@@ -47,15 +46,16 @@ async function main() {
     timedExecOrDie('gulp update-packages');
 
     await startSauceConnect(FILENAME);
-    timedExecOrDie('gulp test --unit --nobuild --saucelabs_lite');
-    timedExecOrDie('gulp test --integration --nobuild --compiled --saucelabs');
+    timedExecOrDie('gulp unit --nobuild --saucelabs');
+    timedExecOrDie(
+      'gulp integration --nobuild --compiled --saucelabs --stable'
+    );
+    timedExecOrDie('gulp integration --nobuild --compiled --saucelabs --beta');
 
     stopSauceConnect(FILENAME);
   } else {
     printChangeSummary(FILENAME);
-    const buildTargets = new Set();
-    determineBuildTargets(buildTargets, FILENAME);
-
+    const buildTargets = determineBuildTargets(FILENAME);
     if (
       !buildTargets.has('RUNTIME') &&
       !buildTargets.has('FLAG_CONFIG') &&
@@ -76,7 +76,7 @@ async function main() {
     await startSauceConnect(FILENAME);
 
     if (buildTargets.has('RUNTIME') || buildTargets.has('UNIT_TEST')) {
-      timedExecOrDie('gulp test --unit --nobuild --saucelabs_lite');
+      timedExecOrDie('gulp unit --nobuild --saucelabs');
     }
 
     if (
@@ -85,7 +85,10 @@ async function main() {
       buildTargets.has('INTEGRATION_TEST')
     ) {
       timedExecOrDie(
-        'gulp test --integration --nobuild --compiled --saucelabs'
+        'gulp integration --nobuild --compiled --saucelabs --stable'
+      );
+      timedExecOrDie(
+        'gulp integration --nobuild --compiled --saucelabs --beta'
       );
     }
     stopSauceConnect(FILENAME);

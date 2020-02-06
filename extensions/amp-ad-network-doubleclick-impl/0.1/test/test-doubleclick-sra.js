@@ -64,25 +64,21 @@ const config = {amp: true, allowExternalResources: true};
   tests to fail.
 */
 describes.realWin('Doubleclick SRA', config, env => {
-  let sandbox;
   let doc;
 
   beforeEach(() => {
     doc = env.win.document;
-    sandbox = env.sandbox;
     // ensures window location == AMP cache passes
-    env.win.AMP_MODE.test = true;
+    env.win.__AMP_MODE.test = true;
   });
 
   function createAndAppendAdElement(opt_attributes, opt_type, opt_domElement) {
-    const element = createElementWithAttributes(
-      doc,
-      opt_type || 'amp-ad',
-      Object.assign(
-        {type: 'doubleclick', height: 320, width: 50},
-        opt_attributes
-      )
-    );
+    const element = createElementWithAttributes(doc, opt_type || 'amp-ad', {
+      type: 'doubleclick',
+      height: 320,
+      width: 50,
+      ...opt_attributes,
+    });
     (opt_domElement || doc.body).appendChild(element);
     return element;
   }
@@ -206,6 +202,24 @@ describes.realWin('Doubleclick SRA', config, env => {
       impls[3] = {};
       expect(getTargetingAndExclusions(impls)).to.jsonEqual({
         'prev_scp': '|a=1&b=2|c=1&d=l%3Dd&excl_cat=a,b|',
+      });
+    });
+    it('should move common targeting into csp parameter', () => {
+      impls[0] = {jsonTargeting: {targeting: {a: 1, b: 2, c: 3, d: 4, e: 5}}};
+      impls[1] = {jsonTargeting: {targeting: {a: 1, b: 2, c: 3, d: 4}}};
+      impls[2] = {jsonTargeting: {targeting: {a: 2, b: 2, c: 4, d: 4}}};
+      impls[3] = {jsonTargeting: {targeting: {b: 2, d: 4}}};
+      expect(getTargetingAndExclusions(impls)).to.jsonEqual({
+        'csp': 'b=2&d=4',
+        'prev_scp': 'a=1&c=3&e=5|a=1&c=3|a=2&c=4|',
+      });
+    });
+    it('should not use csp parameter if slot has no targeting', () => {
+      impls[0] = {jsonTargeting: {targeting: {a: 1, b: 2}}};
+      impls[1] = {jsonTargeting: {}};
+      impls[2] = {jsonTargeting: {targeting: {a: 1, b: 2}}};
+      expect(getTargetingAndExclusions(impls)).to.jsonEqual({
+        'prev_scp': 'a=1&b=2||a=1&b=2',
       });
     });
     it('should determine experiment ids', () => {
@@ -337,9 +351,11 @@ describes.realWin('Doubleclick SRA', config, env => {
         };
         const element1 = createElementWithAttributes(doc, 'amp-ad', config1);
         const impl1 = new AmpAdNetworkDoubleclickImpl(element1);
-        sandbox.stub(impl1, 'getPageLayoutBox').returns({top: 123, left: 456});
+        env.sandbox
+          .stub(impl1, 'getPageLayoutBox')
+          .returns({top: 123, left: 456});
         impl1.experimentIds = [MANUAL_EXPERIMENT_ID];
-        sandbox
+        env.sandbox
           .stub(impl1, 'generateAdKey_')
           .withArgs('50x320')
           .returns('13579');
@@ -366,8 +382,10 @@ describes.realWin('Doubleclick SRA', config, env => {
         };
         const element2 = createElementWithAttributes(doc, 'amp-ad', config2);
         const impl2 = new AmpAdNetworkDoubleclickImpl(element2);
-        sandbox.stub(impl2, 'getPageLayoutBox').returns({top: 789, left: 101});
-        sandbox
+        env.sandbox
+          .stub(impl2, 'getPageLayoutBox')
+          .returns({top: 789, left: 101});
+        env.sandbox
           .stub(impl2, 'generateAdKey_')
           .withArgs('250x300')
           .returns('2468');
@@ -438,12 +456,12 @@ describes.realWin('Doubleclick SRA', config, env => {
           .splice(1)
           .join()
       );
-      sandbox
+      env.sandbox
         .stub(validInstances[0], 'getLocationQueryParameterValue')
         .withArgs('google_preview')
         .returns('abcdef');
       const xhrWithArgs = xhrMock.withArgs(
-        sinon.match(
+        env.sandbox.match(
           new RegExp(
             '^https://securepubads\\.g\\.doubleclick\\.net' +
               '/gampad/ads\\?output=ldjh&impl=fifs&iu_parts=' +
@@ -496,7 +514,7 @@ describes.realWin('Doubleclick SRA', config, env => {
           `\/gampad\/ads\\?iu=${iu}&`
       );
       xhrMock
-        .withArgs(sinon.match(urlRegexp), {
+        .withArgs(env.sandbox.match(urlRegexp), {
           mode: 'cors',
           method: 'GET',
           credentials: 'include',
@@ -547,7 +565,7 @@ describes.realWin('Doubleclick SRA', config, env => {
       const networkValidity = {};
       const doubleclickInstances = [];
       const networkNestHeaders = [];
-      const attemptCollapseSpy = sandbox.spy(
+      const attemptCollapseSpy = env.sandbox.spy(
         BaseElement.prototype,
         'attemptCollapse'
       );
@@ -562,9 +580,9 @@ describes.realWin('Doubleclick SRA', config, env => {
           for (let i = 0; i < instanceCount; i++) {
             const impl = createA4aSraInstance(network.networkId);
             doubleclickInstances.push(impl);
-            sandbox.stub(impl, 'isValidElement').returns(!invalid);
-            sandbox.stub(impl, 'promiseErrorHandler_');
-            sandbox.stub(impl, 'warnOnError');
+            env.sandbox.stub(impl, 'isValidElement').returns(!invalid);
+            env.sandbox.stub(impl, 'promiseErrorHandler_');
+            env.sandbox.stub(impl, 'warnOnError');
             if (invalid) {
               impl.element.setAttribute('data-test-invalid', 'true');
             }
@@ -589,7 +607,7 @@ describes.realWin('Doubleclick SRA', config, env => {
           groupingPromises[networkId] || (groupingPromises[networkId] = [])
         ).push(Promise.resolve(impl));
       });
-      sandbox
+      env.sandbox
         .stub(AmpAdNetworkDoubleclickImpl.prototype, 'groupSlotsForSra')
         .returns(Promise.resolve(groupingPromises));
       let idx = 0;
@@ -674,11 +692,11 @@ describes.realWin('Doubleclick SRA', config, env => {
     }
 
     beforeEach(() => {
-      xhrMock = sandbox.stub(Xhr.prototype, 'fetch');
-      sandbox
+      xhrMock = env.sandbox.stub(Xhr.prototype, 'fetch');
+      env.sandbox
         .stub(AmpA4A.prototype, 'getSigningServiceNames')
         .returns(['google']);
-      sandbox
+      env.sandbox
         .stub(SignatureVerifier.prototype, 'loadKeyset')
         .callsFake(() => {});
     });

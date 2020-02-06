@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import * as applyExperiment from '../apply-experiment';
 import * as variant from '../variant';
 import {AmpExperiment} from '../amp-experiment';
 import {Services} from '../../../../src/services';
@@ -89,15 +90,16 @@ describes.realWin(
     }
 
     function stubAllocateVariant(sandbox, config) {
-      const stub = sandbox.stub(variant, 'allocateVariant');
+      const viewer = Services.viewerForDoc(ampdoc);
+      const stub = env.sandbox.stub(variant, 'allocateVariant');
       stub
-        .withArgs(ampdoc, 'experiment-1', config['experiment-1'])
+        .withArgs(ampdoc, viewer, 'experiment-1', config['experiment-1'])
         .returns(Promise.resolve('variant-a'));
       stub
-        .withArgs(ampdoc, 'experiment-2', config['experiment-2'])
+        .withArgs(ampdoc, viewer, 'experiment-2', config['experiment-2'])
         .returns(Promise.resolve('variant-d'));
       stub
-        .withArgs(ampdoc, 'experiment-3', config['experiment-3'])
+        .withArgs(ampdoc, viewer, 'experiment-3', config['experiment-3'])
         .returns(Promise.resolve(null));
       return stub;
     }
@@ -169,63 +171,53 @@ describes.realWin(
       );
     });
 
-    it(
-      'should throw if the chosen experiment / ' +
-        'variant config has too many mutations',
-      () => {
-        const tooManyMutationsConfig = {
-          'experiment-1': {
-            variants: {
-              'variant-a': {
-                weight: 50,
-                mutations: new Array(200).fill({}),
-              },
-              'variant-b': {
-                weight: 50,
-                mutations: new Array(200).fill({}),
-              },
-            },
-          },
-        };
-
-        addConfigElement(
-          'script',
-          'application/json',
-          JSON.stringify(tooManyMutationsConfig)
-        );
-        stubAllocateVariant(sandbox, tooManyMutationsConfig);
-
-        expectAsyncConsoleError(/Max number of mutations/);
-        return experiment.buildCallback().then(
-          () => {
-            throw new Error('must have failed');
-          },
-          e => {
-            expect(e).to.match(/Max number of mutations/);
-          }
-        );
-      }
-    );
-
     it('should match the variant to the experiment', () => {
       addConfigElement('script');
-      stubAllocateVariant(sandbox, config);
 
-      const applyStub = sandbox.stub(experiment, 'applyMutations_');
-      sandbox.stub(experiment, 'validateExperimentToVariant_');
+      stubAllocateVariant(env.sandbox, config);
+      const applyStub = env.sandbox
+        .stub(applyExperiment, 'applyExperimentToVariant')
+        .returns(Promise.resolve());
 
       experiment.buildCallback();
       return Services.variantsForDocOrNull(ampdoc.getHeadNode())
         .then(variantsService => variantsService.getVariants())
         .then(variants => {
+          expect(applyStub).to.be.calledOnce;
           expect(variants).to.jsonEqual({
             'experiment-1': 'variant-a',
             'experiment-2': 'variant-d',
             'experiment-3': null,
           });
-
-          expect(applyStub).to.be.calledTwice;
         });
     });
+
+    it(
+      'should not apply any experiments when ' +
+        '_disable_all_experiments_ is enabled',
+      () => {
+        addConfigElement('script');
+
+        stubAllocateVariant(env.sandbox, config);
+        const applyStub = env.sandbox
+          .stub(applyExperiment, 'applyExperimentToVariant')
+          .returns(Promise.resolve());
+
+        env.sandbox.stub(ampdoc, 'getParam').returns('true');
+
+        experiment.buildCallback();
+        return Services.variantsForDocOrNull(ampdoc.getHeadNode())
+          .then(variantsService => variantsService.getVariants())
+          .then(variants => {
+            expect(variants).to.jsonEqual({
+              'experiment-1': null,
+              'experiment-2': null,
+              'experiment-3': null,
+            });
+
+            expect(applyStub).to.not.be.called;
+          });
+      }
+    );
   }
 );

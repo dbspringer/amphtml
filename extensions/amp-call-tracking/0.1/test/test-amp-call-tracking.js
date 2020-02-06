@@ -32,7 +32,7 @@ describes.realWin(
     beforeEach(() => {
       win = env.win;
       doc = win.document;
-      xhrMock = sandbox.mock(Services.xhrFor(win));
+      xhrMock = env.sandbox.mock(Services.xhrFor(win));
     });
 
     afterEach(() => {
@@ -63,7 +63,10 @@ describes.realWin(
     function mockXhrResponse(url, response) {
       xhrMock
         .expects('fetchJson')
-        .withArgs(url, sandbox.match(init => init.credentials == 'include'))
+        .withArgs(
+          url,
+          env.sandbox.match(init => init.credentials == 'include')
+        )
         .returns(
           Promise.resolve({
             json() {
@@ -123,7 +126,7 @@ describes.realWin(
       });
     });
 
-    it('should fail when response does not contain a phoneNumber field', () => {
+    it('should warn when response does not contain a phoneNumber field', () => {
       const url = 'https://example.com/test.json';
 
       const defaultNumber = '123456';
@@ -131,13 +134,17 @@ describes.realWin(
 
       mockXhrResponse(url, {});
 
-      return expect(
-        getCallTrackingEl({
-          url,
-          defaultNumber,
-          defaultContent,
-        })
-      ).rejectedWith(/Response must contain a non-empty phoneNumber field/);
+      return getCallTrackingEl({
+        url,
+        defaultNumber,
+        defaultContent,
+      }).then(callTrackingEl => {
+        expectHyperlinkToBe(
+          callTrackingEl,
+          `tel:${defaultNumber}`,
+          defaultContent
+        );
+      });
     });
   }
 );
