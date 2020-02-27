@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
+import {CONSENT_POLICY_STATE} from '../src/consent-state';
 import {loadScript, validateData} from '../3p/3p';
 
-const pubmineOptional = ['section', 'pt', 'ht'],
+const pubmineOptional = ['section', 'pt', 'ht', 'npaOnUnknownConsent'],
   pubmineRequired = ['siteid'],
   pubmineURL = 'https://s.pubmine.com/head.js';
 
@@ -25,11 +26,22 @@ const pubmineOptional = ['section', 'pt', 'ht'],
  * @param {!Window} global
  */
 function initMasterFrame(data, global) {
+  /*
+   * INSUFFICIENT and UNKNOWN should be treated as INSUFFICIENT
+   * not defined states should be treated as INSUFFICIENT
+   */
+  const consent =
+    global.context.initialConsentState === null ||
+    global.context.initialConsentState === CONSENT_POLICY_STATE.SUFFICIENT ||
+    global.context.initialConsentState ===
+      CONSENT_POLICY_STATE.UNKNOWN_NOT_REQUIRED;
+
   global['__ATA_PP'] = {
     pt: data['pt'] || 1,
     ht: data['ht'] || 1,
     tn: 'amp',
     amp: true,
+    consent: consent ? 1 : 0,
   };
   global['__ATA'] = global['__ATA'] || {};
   global['__ATA']['cmd'] = global['__ATA']['cmd'] || [];
